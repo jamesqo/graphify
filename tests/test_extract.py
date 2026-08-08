@@ -851,6 +851,27 @@ def test_extract_js_const_function_expression(tmp_path):
     assert "handler()" in labels
 
 
+def test_extract_js_guarded_default_export_function_expression(tmp_path):
+    """A named function used as a guarded default export is a module symbol.
+
+    Axios uses this form for its Node HTTP adapter.  The expression wrapper
+    must not make the function invisible, while functions passed to calls
+    remain callbacks rather than module-level declarations.
+    """
+    from graphify.extract import extract_js
+
+    f = tmp_path / "adapter.js"
+    f.write_text(
+        "const supported = true;\n"
+        "export default supported && function httpAdapter(config) {\n"
+        "  return wrap(function dispatchRequest() {});\n"
+        "};\n"
+    )
+    labels = [n["label"] for n in extract_js(f)["nodes"]]
+    assert "httpAdapter()" in labels
+    assert "dispatchRequest()" not in labels
+
+
 def test_extract_ts_class_arrow_field(tmp_path):
     """A class field initialised with an arrow function (`x = () => {}`) must be
     captured as a method of the class — common in React/TS component classes."""

@@ -1722,6 +1722,33 @@ def _require_imports_js(node, source: bytes, file_nid: str, stem: str, edges: li
     return found
 
 _JS_FUNCTION_VALUE_TYPES = frozenset({"arrow_function", "function_expression", "function", "generator_function"})
+_JS_DEFAULT_EXPORT_VALUE_WRAPPERS = frozenset({
+    "binary_expression",
+    "parenthesized_expression",
+    "ternary_expression",
+})
+
+
+def _js_is_default_export_function_expression(node) -> bool:
+    """Return whether a named function expression is part of a default-export value.
+
+    Only transparent expression wrappers are crossed.  In particular, a
+    function passed to a call within the exported expression remains a
+    callback and must not become a module-level symbol.
+    """
+    if node.type not in ("function_expression", "function"):
+        return False
+    current = node.parent
+    while (
+        current is not None
+        and current.type in _JS_DEFAULT_EXPORT_VALUE_WRAPPERS
+    ):
+        current = current.parent
+    return (
+        current is not None
+        and current.type == "export_statement"
+        and any(child.type == "default" for child in current.children)
+    )
 
 def _js_member_assignment_target(left, source: bytes):
     """Classify the symbol an `assignment_expression` LHS defines when its RHS
@@ -3374,7 +3401,14 @@ def _extract_generic(
             return
 
         # Function types
-        if t in config.function_types:
+        is_js_default_export_function = (
+            config.ts_module in (
+                "tree_sitter_javascript",
+                "tree_sitter_typescript",
+            )
+            and _js_is_default_export_function_expression(node)
+        )
+        if t in config.function_types or is_js_default_export_function:
             # Swift deinit/subscript have no name field — resolve before generic fallback
             if t == "deinit_declaration":
                 func_name: str | None = "deinit"
